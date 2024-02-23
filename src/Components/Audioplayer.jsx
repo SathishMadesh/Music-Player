@@ -1,74 +1,127 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 const AudioPlayer = () => {
-    const [playlist, setPlaylist] = useState([]);
-    const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
-    const [audioRef, setAudioRef] = useState(new Audio());
+  const [playlist, setPlaylist] = useState([]);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+  const [audioRef, setAudioRef] = useState(new Audio());
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentSongName, setCurrentSongName] = useState('');
+  const handleEndedRef = useRef();
 
-    useEffect(() => {
-        // Load the last playing audio file and position on component mount
-        const savedTrackIndex = localStorage.getItem('currentTrackIndex');
-        if (savedTrackIndex) {
-            setCurrentTrackIndex(parseInt(savedTrackIndex, 10));
+  // Assign the handleEnded function to the ref
+  handleEndedRef.current = () => {
+    setCurrentTrackIndex((prevIndex) => (prevIndex + 1) % playlist.length);
+  };
+
+  useEffect(() => {
+    const savedTrackIndex = localStorage.getItem('currentTrackIndex');
+    if (savedTrackIndex) {
+      setCurrentTrackIndex(parseInt(savedTrackIndex, 10));
+    }
+
+    const savedPlaylist = JSON.parse(localStorage.getItem('playlist'));
+    if (savedPlaylist) {
+      setPlaylist(savedPlaylist);
+    }
+
+    setAudioRef(new Audio());
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('currentTrackIndex', currentTrackIndex);
+    localStorage.setItem('playlist', JSON.stringify(playlist));
+    setCurrentSongName(playlist[currentTrackIndex]?.name || '');
+  }, [currentTrackIndex, playlist]);
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    setPlaylist([...playlist, file]);
+  };
+
+  const handlePlayPause = async () => {
+    if (playlist.length === 0) {
+      console.log('Playlist is empty');
+      return;
+    }
+
+    try {
+      if (audioRef.paused || audioRef.src === '') {
+        // If audio is paused or no source, set the src and play
+        audioRef.src = URL.createObjectURL(playlist[currentTrackIndex]);
+
+        const savedTime = localStorage.getItem('currentTime');
+        if (savedTime) {
+          audioRef.currentTime = parseFloat(savedTime);
         }
 
-        const savedPlaylist = JSON.parse(localStorage.getItem('playlist'));
-        if (savedPlaylist) {
-            setPlaylist(savedPlaylist);
-            // Check if there is a last playing audio file
-            const lastPlayingTrack = savedPlaylist[parseInt(savedTrackIndex, 10)];
-            if (lastPlayingTrack) {
-                audioRef.current.src = URL.createObjectURL(lastPlayingTrack);
-                audioRef.current.play();
-            }
-        }
-    }, []);
+        await audioRef.play();
+        setIsPlaying(true);
+      } else {
+        // If audio is playing, pause it
+        audioRef.pause();
+        setIsPlaying(false);
+      }
+    } catch (error) {
+      console.error('Error during playback:', error);
+    }
+  };
 
-    useEffect(() => {
-        // Save current playing track and position on change
-        localStorage.setItem('currentTrackIndex', currentTrackIndex);
-        localStorage.setItem('playlist', JSON.stringify(playlist));
-    }, [currentTrackIndex, playlist]);
+  const handleNext = () => {
+    if (isPlaying) {
+      audioRef.pause();
+      setIsPlaying(false);
+    }
 
-    const handleFileChange = (e) => {
-        const file = e.target.files[0];
-        setPlaylist([...playlist, file]);
+    setCurrentTrackIndex((prevIndex) => (prevIndex + 1) % playlist.length);
+  };
+
+  const handleEnded = () => {
+    setCurrentTrackIndex((prevIndex) => (prevIndex + 1) % playlist.length);
+  };
+
+  useEffect(() => {
+    audioRef.src = playlist[currentTrackIndex] && URL.createObjectURL(playlist[currentTrackIndex]);
+
+    const playPromise = audioRef.play();
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          setIsPlaying(true);
+        })
+        .catch((error) => {
+          console.error('Error playing the next track:', error);
+        });
+    }
+
+    // Remove the event listener after it's used to avoid memory leaks
+    audioRef.onended = () => {
+      handleEnded();
+      handleEndedRef.current();
     };
 
-    const handlePlay = (index) => {
-        setCurrentTrackIndex(index);
-      
-        const file = playlist[index];
-        const objectURL = URL.createObjectURL(file);
-      
-        audioRef.current.pause();
-        audioRef.current.src = objectURL;
-        audioRef.current.load();
-        audioRef.current.play();
-      };
-
-    const handleNext = () => {
-        setCurrentTrackIndex((prevIndex) => (prevIndex + 1) % playlist.length);
+    return () => {
+      audioRef.onended = null;
     };
+  }, [currentTrackIndex, playlist, audioRef]);
 
-    const handleEnded = () => {
-        // Play the next track when the current one ends
-        handleNext();
-    };
+  useEffect(() => {
+    // Save current playback position
+    localStorage.setItem('currentTime', audioRef.currentTime.toString());
+  }, [audioRef.currentTime]);
 
-    return (
-        <div>
-            <input type="file" accept=".mp3" onChange={handleFileChange} />
-            <button onClick={() => handlePlay(currentTrackIndex)}>Play</button>
-            <button onClick={handleNext}>Next</button>
-            <audio ref={(ref) => setAudioRef(ref)} onEnded={handleEnded} />
-            <ul>
-                {playlist.map((track, index) => (
-                    <li key={index}>{track.name}</li>
-                ))}
-            </ul>
-        </div>
-    );
+  return (
+    <div>
+      <input type="file" accept=".mp3" onChange={handleFileChange} />
+      <button onClick={handlePlayPause}>{isPlaying ? 'Pause' : 'Play'}</button>
+      <button onClick={handleNext}>Next</button>
+      <div>Currently Playing: {currentSongName}</div>
+      <ul>
+        {playlist.map((track, index) => (
+          <li key={index}>{track.name}</li>
+        ))}
+      </ul>
+    </div>
+  );
 };
 
 export default AudioPlayer;
