@@ -82,8 +82,7 @@ const AudioPlayer = () => {
     setCurrentTrackIndex((prevIndex) => (prevIndex + 1) % playlist.length);
   };
 
-  // ...
-
+  
   useEffect(() => {
     audioRef.src = playlist[currentTrackIndex] && URL.createObjectURL(playlist[currentTrackIndex]);
   
